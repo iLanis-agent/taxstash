@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaxStash - app</title>
+<style>
+  :root { --bg:#0c1416; --card:#132024; --card2:#0f1a1d; --line:#1e3237; --ink:#e8f4f2; --dim:#8fb3ad; --teal:#5eead4; --amber:#fbbf24; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:28px 20px 64px; }
+  header { display:flex; justify-content:space-between; align-items:baseline; margin-bottom:22px; }
+  header h1 { font-size:26px; margin:0; }
+  header h1 span { color:var(--teal); }
+  header a { color:var(--dim); text-decoration:none; font-size:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:20px; margin:0 0 18px; }
+  .card h2 { margin:0 0 14px; font-size:18px; }
+  label { display:block; font-size:12px; letter-spacing:1px; text-transform:uppercase; color:var(--dim); margin:0 0 6px; }
+  input { width:100%; background:var(--card2); border:1px solid var(--line); color:var(--ink); border-radius:10px; padding:10px 12px; font-size:16px; }
+  .row { display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-bottom:14px; }
+  .row3 { display:grid; grid-template-columns:1fr 1fr auto; gap:14px; align-items:end; }
+  button { background:var(--teal); color:#06231e; border:0; font-weight:700; border-radius:10px; padding:11px 22px; font-size:16px; cursor:pointer; }
+  .linkbtn { background:none; border:0; color:var(--dim); font-size:13px; cursor:pointer; padding:6px 0 0; text-decoration:underline; }
+  .hint { color:var(--dim); font-size:14px; margin-top:10px; }
+  .due { background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:14px; margin-bottom:14px; color:var(--amber); font-weight:600; }
+  .stats { display:grid; grid-template-columns:1fr 1fr 1fr; gap:14px; }
+  .stat { background:var(--card2); border:1px solid var(--line); border-radius:12px; padding:14px; }
+  .stat b { display:block; font-size:22px; color:var(--teal); font-variant-numeric:tabular-nums; }
+  .stat span { color:var(--dim); font-size:13px; }
+  .qrow { display:flex; justify-content:space-between; padding:10px 4px; border-top:1px solid var(--line); font-size:15px; }
+  .qrow .amt { color:var(--teal); font-variant-numeric:tabular-nums; }
+  .qrow .due { color:var(--dim); font-size:13px; border:0; padding:0; margin:0; background:none; font-weight:400; }
+  .loglist { margin-top:12px; color:var(--dim); font-size:14px; }
+  .loglist div { border-top:1px solid var(--line); padding:6px 2px; display:flex; justify-content:space-between; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Tax<span>Stash</span></h1>
+    <a href="index.html">&larr; Home</a>
+  </header>
+
+  <div class="card">
+    <h2>Set-up</h2>
+    <div class="row">
+      <div><label for="f-rate">Set-aside rate (%)</label><input id="f-rate" type="number" min="1" max="60" value="25"></div>
+      <div><label for="f-stashed">Already stashed ($)</label><input id="f-stashed" type="number" min="0" value="0"></div>
+    </div>
+    <button class="linkbtn" id="f-suggest">suggest a rate for my income</button>
+    <p class="hint" id="due"></p>
+  </div>
+
+  <div class="card">
+    <h2>Log a payment</h2>
+    <div class="row3">
+      <div><label for="f-amount">Amount ($)</label><input id="f-amount" type="number" min="1" placeholder="2500"></div>
+      <div><label for="f-date">Date</label><input id="f-date" type="date"></div>
+      <button id="f-add">Add</button>
+    </div>
+    <div class="loglist" id="loglist"></div>
+  </div>
+
+  <div class="card">
+    <h2>Your numbers</h2>
+    <div class="stats">
+      <div class="stat"><b id="s-spend">$0</b><span>safe to spend</span></div>
+      <div class="stat"><b id="s-target">$0</b><span>set-aside target</span></div>
+      <div class="stat"><b id="s-left">$0</b><span>still to stash</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>By quarter</h2>
+    <div id="quarters"><p class="hint">No payments logged yet.</p></div>
+  </div>
+</div>
+<script src="engine.js"></script>
+<script>
+(function () {
+  'use strict';
+  var KEY = 'taxstash-data';
+  var $ = function (id) { return document.getElementById(id); };
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || { rate: 25, stashed: 0, payments: [] }; }
+    catch (e) { return { rate: 25, stashed: 0, payments: [] }; }
+  }
+  function save(d) { localStorage.setItem(KEY, JSON.stringify(d)); }
+
+  function render() {
+    var d = load();
+    var rate = (+d.rate || 25) / 100;
+    var sts = StashEngine.safeToSpend(d.payments, rate, +d.stashed || 0);
+    $('s-spend').textContent = StashEngine.money(sts.spendable);
+    $('s-target').textContent = StashEngine.money(sts.setAsideTarget);
+    $('s-left').textContent = StashEngine.money(sts.stillToStash);
+    var nd = StashEngine.nextDue(new Date());
+    $('due').textContent = nd ? 'Next estimated payment (' + nd.label + ') is due ' + nd.dueISO + ' - ' + nd.daysLeft + ' day' + (nd.daysLeft === 1 ? '' : 's') + ' left.' : '';
+
+    var acc = StashEngine.accrue(d.payments, rate);
+    var qb = $('quarters'); qb.innerHTML = '';
+    if (!acc.length) { qb.innerHTML = '<p class="hint">No payments logged yet.</p>'; }
+    acc.forEach(function (q) {
+      var div = document.createElement('div');
+      div.className = 'qrow';
+      var l = document.createElement('span');
+      l.innerHTML = q.label + ' <span class="due">income ' + StashEngine.money(q.income) + ' - due ' + q.dueISO + '</span>';
+      var a = document.createElement('span'); a.className = 'amt';
+      a.textContent = 'stash ' + StashEngine.money(q.setAside);
+      div.appendChild(l); div.appendChild(a); qb.appendChild(div);
+    });
+
+    var lb = $('loglist'); lb.innerHTML = '';
+    d.payments.slice(-6).reverse().forEach(function (p) {
+      var div = document.createElement('div');
+      var a = document.createElement('span'); a.textContent = p.at.slice(0, 10);
+      var b = document.createElement('span'); b.textContent = StashEngine.money(p.amount) + ' (stash ' + StashEngine.money(p.amount * rate) + ')';
+      div.appendChild(a); div.appendChild(b); lb.appendChild(div);
+    });
+  }
+
+  $('f-add').addEventListener('click', function () {
+    var amt = +$('f-amount').value;
+    if (!amt || amt <= 0) return;
+    var d = load();
+    var dt = $('f-date').value ? new Date($('f-date').value + 'T12:00:00') : new Date();
+    d.payments.push({ amount: amt, at: dt.toISOString() });
+    save(d); $('f-amount').value = ''; render();
+  });
+  $('f-rate').addEventListener('change', function () { var d = load(); d.rate = +$('f-rate').value || 25; save(d); render(); });
+  $('f-stashed').addEventListener('change', function () { var d = load(); d.stashed = +$('f-stashed').value || 0; save(d); render(); });
+  $('f-suggest').addEventListener('click', function () {
+    var d = load();
+    var total = 0; d.payments.forEach(function (p) { total += p.amount; });
+    var annual = total > 0 ? total * 4 : 60000; // rough annualization of logged income
+    var r = Math.round(StashEngine.suggestRate(annual) * 100);
+    $('f-rate').value = r; d.rate = r; save(d); render();
+  });
+
+  var d0 = load();
+  $('f-rate').value = d0.rate; $('f-stashed').value = d0.stashed;
+  render();
+})();
+</script>
+</body>
+</html>
